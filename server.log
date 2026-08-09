@@ -1,0 +1,9 @@
+
+> chirpy@1.0.0 dev
+> npx tsc && node dist/index.js
+
+Server is running at http://localhost:8080
+[NON-OK] GET / - Status: 301
+[NON-OK] GET / - Status: 301
+[NON-OK] GET / - Status: 301
+[NON-OK] GET / - Status: 301
