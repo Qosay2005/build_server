@@ -1,4 +1,9 @@
-import { eq, and, gt, isNull } from "drizzle-orm";
+import {
+  eq,
+  and,
+  gt,
+  isNull,
+} from "drizzle-orm";
 
 import { db } from "../index.js";
 
@@ -27,13 +32,21 @@ export async function getUserFromRefreshToken(
     .from(refreshTokens)
     .innerJoin(
       users,
-      eq(refreshTokens.userId, users.id),
+      eq(
+        refreshTokens.userId,
+        users.id,
+      ),
     )
     .where(
       and(
         eq(refreshTokens.token, token),
-        isNull(refreshTokens.revokedAt),
-        gt(refreshTokens.expiresAt, new Date()),
+        isNull(
+          refreshTokens.revokedAt,
+        ),
+        gt(
+          refreshTokens.expiresAt,
+          new Date(),
+        ),
       ),
     );
 
@@ -49,7 +62,9 @@ export async function revokeRefreshToken(
       revokedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(refreshTokens.token, token));
+    .where(
+      eq(refreshTokens.token, token),
+    );
 }
 
 export async function deleteAllRefreshTokens() {

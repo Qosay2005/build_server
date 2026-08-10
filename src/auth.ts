@@ -1,74 +1,111 @@
-import argon2 from "argon2";
-import crypto from "crypto";
-import jwt, { type JwtPayload } from "jsonwebtoken";
-import type { Request } from "express";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import { randomBytes } from "crypto";
 
-export async function hashPassword(password: string): Promise<string> {
-  return await argon2.hash(password);
+export async function hashPassword(
+  password: string,
+) {
+  const hash = await bcrypt.hash(password, 10);
+
+  return hash;
 }
 
 export async function checkPasswordHash(
   password: string,
   hash: string,
-): Promise<boolean> {
-  return await argon2.verify(hash, password);
+) {
+  return await bcrypt.compare(password, hash);
 }
-
-type ChirpyJwtPayload = Pick<
-  JwtPayload,
-  "iss" | "sub" | "iat" | "exp"
->;
 
 export function makeJWT(
   userID: string,
   expiresIn: number,
   secret: string,
-): string {
-  const iat = Math.floor(Date.now() / 1000);
-
-  const payload: ChirpyJwtPayload = {
-    iss: "chirpy",
-    sub: userID,
-    iat,
-    exp: iat + expiresIn,
-  };
-
-  return jwt.sign(payload, secret);
+) {
+  return jwt.sign(
+    {
+      iss: "chirpy",
+      sub: userID,
+    },
+    secret,
+    {
+      expiresIn,
+    },
+  );
 }
 
 export function validateJWT(
   tokenString: string,
   secret: string,
-): string {
-  try {
-    const payload = jwt.verify(tokenString, secret) as JwtPayload;
+) {
+  const decoded = jwt.verify(
+    tokenString,
+    secret,
+  );
 
-    if (!payload.sub || typeof payload.sub !== "string") {
-      throw new Error("Invalid token");
-    }
-
-    return payload.sub;
-  } catch {
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    typeof decoded.sub !== "string"
+  ) {
     throw new Error("Invalid token");
   }
+
+  return decoded.sub;
 }
 
-export function getBearerToken(req: Request): string {
-  const authHeader = req.get("Authorization");
+export function getBearerToken(
+  req: {
+    get: (name: string) => string | undefined;
+  },
+) {
+  const authHeader =
+    req.get("Authorization");
 
   if (!authHeader) {
-    throw new Error("Missing Authorization header");
+    throw new Error(
+      "Missing Authorization header",
+    );
   }
 
-  const [scheme, token] = authHeader.split(" ");
+  const parts = authHeader.split(" ");
 
-  if (scheme !== "Bearer" || !token) {
-    throw new Error("Invalid Authorization header");
+  if (
+    parts.length !== 2 ||
+    parts[0] !== "Bearer"
+  ) {
+    throw new Error(
+      "Invalid Authorization header",
+    );
   }
 
-  return token;
+  return parts[1];
 }
 
-export function makeRefreshToken(): string {
-  return crypto.randomBytes(32).toString("hex");
+export function getAPIKey(
+  req: {
+    get: (name: string) => string | undefined;
+  },
+) {
+  const authHeader =
+    req.get("Authorization");
+
+  if (!authHeader) {
+    return "";
+  }
+
+  const parts = authHeader.split(" ");
+
+  if (
+    parts.length !== 2 ||
+    parts[0] !== "ApiKey"
+  ) {
+    return "";
+  }
+
+  return parts[1];
+}
+
+export function makeRefreshToken() {
+  return randomBytes(32).toString("hex");
 }

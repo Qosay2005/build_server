@@ -15,6 +15,7 @@ import {
   deleteAllUsers,
   getUserByEmail,
   updateUser,
+  upgradeUserToChirpyRed,
 } from "./db/queries/users.js";
 
 import {
@@ -38,11 +39,8 @@ import {
   makeRefreshToken,
   getBearerToken,
   validateJWT,
+  getAPIKey,
 } from "./auth.js";
-
-// ============================================
-// Database migrations
-// ============================================
 
 const migrationClient = postgres(
   config.db.url,
@@ -58,17 +56,13 @@ await migrate(
 
 await migrationClient.end();
 
-// ============================================
-// App
-// ============================================
-
 const app = express();
 
 const PORT = 8080;
 
-// ============================================
+// ============================================================
 // Middleware
-// ============================================
+// ============================================================
 
 function middlewareLogResponses(
   req: Request,
@@ -92,7 +86,6 @@ function middlewareMetricsInc(
   next: NextFunction,
 ) {
   config.api.fileserverHits++;
-
   next();
 }
 
@@ -100,9 +93,9 @@ app.use(middlewareLogResponses);
 
 app.use(express.json());
 
-// ============================================
-// Health check
-// ============================================
+// ============================================================
+// Health
+// ============================================================
 
 app.get(
   "/api/healthz",
@@ -116,9 +109,9 @@ app.get(
   },
 );
 
-// ============================================
-// Static files
-// ============================================
+// ============================================================
+// Static Files
+// ============================================================
 
 app.use(
   "/app",
@@ -126,9 +119,9 @@ app.use(
   express.static("./src/app"),
 );
 
-// ============================================
-// Admin metrics
-// ============================================
+// ============================================================
+// Admin Metrics
+// ============================================================
 
 app.get(
   "/admin/metrics",
@@ -153,9 +146,9 @@ app.get(
   },
 );
 
-// ============================================
-// Admin reset
-// ============================================
+// ============================================================
+// Admin Reset
+// ============================================================
 
 app.post(
   "/admin/reset",
@@ -165,27 +158,34 @@ app.post(
     next: NextFunction,
   ) => {
     try {
-      if (config.api.platform !== "dev") {
-        res.status(403).send("Forbidden");
+      if (
+        config.api.platform !== "dev"
+      ) {
+        res
+          .status(403)
+          .send("Forbidden");
+
         return;
       }
 
       config.api.fileserverHits = 0;
 
-      await deleteAllUsers();
-
       await deleteAllRefreshTokens();
 
-      res.status(200).send("Reset");
+      await deleteAllUsers();
+
+      res
+        .status(200)
+        .send("Reset");
     } catch (error) {
       next(error);
     }
   },
 );
 
-// ============================================
+// ============================================================
 // Create User
-// ============================================
+// ============================================================
 
 app.post(
   "/api/users",
@@ -205,7 +205,8 @@ app.post(
         typeof password !== "string"
       ) {
         res.status(400).json({
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         });
 
         return;
@@ -214,16 +215,21 @@ app.post(
       const hashedPassword =
         await hashPassword(password);
 
-      const user = await createUser({
-        email,
-        hashedPassword,
-      });
+      const user =
+        await createUser({
+          email,
+          hashedPassword,
+        });
 
       res.status(201).json({
         id: user.id,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
+        createdAt:
+          user.createdAt,
+        updatedAt:
+          user.updatedAt,
         email: user.email,
+        isChirpyRed:
+          user.isChirpyRed,
       });
     } catch (error) {
       next(error);
@@ -231,9 +237,9 @@ app.post(
   },
 );
 
-// ============================================
+// ============================================================
 // Login
-// ============================================
+// ============================================================
 
 app.post(
   "/api/login",
@@ -252,7 +258,8 @@ app.post(
         typeof password !== "string"
       ) {
         res.status(400).json({
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         });
 
         return;
@@ -263,7 +270,8 @@ app.post(
 
       if (!user) {
         res.status(401).json({
-          error: "incorrect email or password",
+          error:
+            "incorrect email or password",
         });
 
         return;
@@ -277,46 +285,49 @@ app.post(
 
       if (!passwordCorrect) {
         res.status(401).json({
-          error: "incorrect email or password",
+          error:
+            "incorrect email or password",
         });
 
         return;
       }
 
-      // Access token expires after 1 hour
+      // Access token: 1 hour
       const token = makeJWT(
         user.id,
         60 * 60,
         config.api.jwtSecret,
       );
 
-      // Refresh token expires after 60 days
+      // Refresh token: 60 days
       const refreshToken =
         makeRefreshToken();
 
-      const refreshTokenExpiresAt =
-        new Date(
-          Date.now() +
+      const expiresAt = new Date(
+        Date.now() +
+          60 *
+            24 *
             60 *
-              24 *
-              60 *
-              60 *
-              1000,
-        );
+            60 *
+            1000,
+      );
 
       await createRefreshToken({
         token: refreshToken,
         userId: user.id,
-        expiresAt:
-          refreshTokenExpiresAt,
+        expiresAt,
         revokedAt: null,
       });
 
       res.status(200).json({
         id: user.id,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
+        createdAt:
+          user.createdAt,
+        updatedAt:
+          user.updatedAt,
         email: user.email,
+        isChirpyRed:
+          user.isChirpyRed,
         token,
         refreshToken,
       });
@@ -324,83 +335,16 @@ app.post(
       console.log(error);
 
       res.status(401).json({
-        error: "incorrect email or password",
+        error:
+          "incorrect email or password",
       });
     }
   },
 );
 
-// ============================================
-// Update User
-// ============================================
-
-app.put(
-  "/api/users",
-  async (
-    req: Request,
-    res: Response,
-  ) => {
-    try {
-      const token = getBearerToken(req);
-
-      const userId = validateJWT(
-        token,
-        config.api.jwtSecret,
-      );
-
-      const {
-        email,
-        password,
-      } = req.body;
-
-      if (
-        typeof email !== "string" ||
-        typeof password !== "string"
-      ) {
-        res.status(400).json({
-          error: "Invalid request body",
-        });
-
-        return;
-      }
-
-      const hashedPassword =
-        await hashPassword(password);
-
-      const updatedUser =
-        await updateUser(
-          userId,
-          email,
-          hashedPassword,
-        );
-
-      if (!updatedUser) {
-        res.status(404).json({
-          error: "User not found",
-        });
-
-        return;
-      }
-
-      res.status(200).json({
-        id: updatedUser.id,
-        createdAt:
-          updatedUser.createdAt,
-        updatedAt:
-          updatedUser.updatedAt,
-        email: updatedUser.email,
-      });
-    } catch (error) {
-      res.status(401).json({
-        error: "Invalid token",
-      });
-    }
-  },
-);
-
-// ============================================
+// ============================================================
 // Refresh Token
-// ============================================
+// ============================================================
 
 app.post(
   "/api/refresh",
@@ -419,7 +363,8 @@ app.post(
 
       if (!result) {
         res.status(401).json({
-          error: "Invalid refresh token",
+          error:
+            "Invalid refresh token",
         });
 
         return;
@@ -438,15 +383,16 @@ app.post(
       });
     } catch (error) {
       res.status(401).json({
-        error: "Invalid refresh token",
+        error:
+          "Invalid refresh token",
       });
     }
   },
 );
 
-// ============================================
+// ============================================================
 // Revoke Refresh Token
-// ============================================
+// ============================================================
 
 app.post(
   "/api/revoke",
@@ -465,15 +411,94 @@ app.post(
       res.status(204).send();
     } catch (error) {
       res.status(401).json({
-        error: "Invalid refresh token",
+        error:
+          "Invalid refresh token",
       });
     }
   },
 );
 
-// ============================================
+// ============================================================
+// Update User
+// ============================================================
+
+app.put(
+  "/api/users",
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    try {
+      const token =
+        getBearerToken(req);
+
+      const userID =
+        validateJWT(
+          token,
+          config.api.jwtSecret,
+        );
+
+      const {
+        email,
+        password,
+      } = req.body;
+
+      if (
+        typeof email !== "string" ||
+        typeof password !== "string"
+      ) {
+        res.status(400).json({
+          error:
+            "Invalid request body",
+        });
+
+        return;
+      }
+
+      const hashedPassword =
+        await hashPassword(
+          password,
+        );
+
+      const updatedUser =
+        await updateUser(
+          userID,
+          email,
+          hashedPassword,
+        );
+
+      if (!updatedUser) {
+        res.status(404).json({
+          error:
+            "User not found",
+        });
+
+        return;
+      }
+
+      res.status(200).json({
+        id: updatedUser.id,
+        createdAt:
+          updatedUser.createdAt,
+        updatedAt:
+          updatedUser.updatedAt,
+        email:
+          updatedUser.email,
+        isChirpyRed:
+          updatedUser.isChirpyRed,
+      });
+    } catch (error) {
+      res.status(401).json({
+        error:
+          "Invalid token",
+      });
+    }
+  },
+);
+
+// ============================================================
 // Create Chirp
-// ============================================
+// ============================================================
 
 app.post(
   "/api/chirps",
@@ -482,18 +507,24 @@ app.post(
     res: Response,
   ) => {
     try {
-      const token = getBearerToken(req);
+      const token =
+        getBearerToken(req);
 
-      const userId = validateJWT(
-        token,
-        config.api.jwtSecret,
-      );
+      const userID =
+        validateJWT(
+          token,
+          config.api.jwtSecret,
+        );
 
-      const { body } = req.body;
+      const { body } =
+        req.body;
 
-      if (typeof body !== "string") {
+      if (
+        typeof body !== "string"
+      ) {
         res.status(400).json({
-          error: "Invalid request body",
+          error:
+            "Invalid request body",
         });
 
         return;
@@ -514,7 +545,8 @@ app.post(
         "fornax",
       ];
 
-      const words = body.split(" ");
+      const words =
+        body.split(" ");
 
       const cleanedWords =
         words.map((word) => {
@@ -532,29 +564,34 @@ app.post(
       const cleanedBody =
         cleanedWords.join(" ");
 
-      const chirp = await createChirp({
-        body: cleanedBody,
-        userId,
-      });
+      const chirp =
+        await createChirp({
+          body: cleanedBody,
+          userId: userID,
+        });
 
       res.status(201).json({
         id: chirp.id,
-        createdAt: chirp.createdAt,
-        updatedAt: chirp.updatedAt,
+        createdAt:
+          chirp.createdAt,
+        updatedAt:
+          chirp.updatedAt,
         body: chirp.body,
-        userId: chirp.userId,
+        userId:
+          chirp.userId,
       });
     } catch (error) {
       res.status(401).json({
-        error: "Invalid token",
+        error:
+          "Invalid token",
       });
     }
   },
 );
 
-// ============================================
+// ============================================================
 // Get All Chirps
-// ============================================
+// ============================================================
 
 app.get(
   "/api/chirps",
@@ -564,19 +601,68 @@ app.get(
     next: NextFunction,
   ) => {
     try {
-      const chirps =
-        await getAllChirps();
+      // Optional authorId filter
+      let authorId = "";
 
-      res.status(200).json(chirps);
+      const authorIdQuery =
+        req.query.authorId;
+
+      if (
+        typeof authorIdQuery ===
+        "string"
+      ) {
+        authorId = authorIdQuery;
+      }
+
+      const chirps =
+        await getAllChirps(
+          authorId,
+        );
+
+      // Optional sorting
+      // Default: ascending
+      let sort = "asc";
+
+      const sortQuery =
+        req.query.sort;
+
+      if (
+        typeof sortQuery ===
+        "string"
+      ) {
+        sort = sortQuery;
+      }
+
+      chirps.sort((a, b) => {
+        const dateA =
+          new Date(
+            a.createdAt,
+          ).getTime();
+
+        const dateB =
+          new Date(
+            b.createdAt,
+          ).getTime();
+
+        if (sort === "desc") {
+          return dateB - dateA;
+        }
+
+        return dateA - dateB;
+      });
+
+      res
+        .status(200)
+        .json(chirps);
     } catch (error) {
       next(error);
     }
   },
 );
 
-// ============================================
-// Get One Chirp
-// ============================================
+// ============================================================
+// Get Chirp
+// ============================================================
 
 app.get(
   "/api/chirps/:chirpId",
@@ -593,7 +679,8 @@ app.get(
         typeof chirpId !== "string"
       ) {
         res.status(400).json({
-          error: "Invalid chirp ID",
+          error:
+            "Invalid chirp ID",
         });
 
         return;
@@ -604,22 +691,25 @@ app.get(
 
       if (!chirp) {
         res.status(404).json({
-          error: "Chirp not found",
+          error:
+            "Chirp not found",
         });
 
         return;
       }
 
-      res.status(200).json(chirp);
+      res
+        .status(200)
+        .json(chirp);
     } catch (error) {
       next(error);
     }
   },
 );
 
-// ============================================
+// ============================================================
 // Delete Chirp
-// ============================================
+// ============================================================
 
 app.delete(
   "/api/chirps/:chirpId",
@@ -628,14 +718,14 @@ app.delete(
     res: Response,
   ) => {
     try {
-      // Get access token
-      const token = getBearerToken(req);
+      const token =
+        getBearerToken(req);
 
-      // Validate access token
-      const userId = validateJWT(
-        token,
-        config.api.jwtSecret,
-      );
+      const userID =
+        validateJWT(
+          token,
+          config.api.jwtSecret,
+        );
 
       const chirpId =
         req.params.chirpId;
@@ -644,51 +734,129 @@ app.delete(
         typeof chirpId !== "string"
       ) {
         res.status(404).json({
-          error: "Chirp not found",
+          error:
+            "Chirp not found",
         });
 
         return;
       }
 
-      // Find the chirp
       const chirp =
         await getChirp(chirpId);
 
-      // Chirp doesn't exist
       if (!chirp) {
         res.status(404).json({
-          error: "Chirp not found",
+          error:
+            "Chirp not found",
         });
 
         return;
       }
 
-      // Only the author can delete
-      if (chirp.userId !== userId) {
+      if (
+        chirp.userId !== userID
+      ) {
         res.status(403).json({
-          error: "Forbidden",
+          error:
+            "You are not authorized to delete this chirp",
         });
 
         return;
       }
 
-      // Delete chirp
-      await deleteChirp(chirpId);
+      await deleteChirp(
+        chirpId,
+      );
 
-      // No response body for 204
       res.status(204).send();
     } catch (error) {
-      // Missing or invalid token
       res.status(401).json({
-        error: "Invalid token",
+        error:
+          "Invalid token",
       });
     }
   },
 );
 
-// ============================================
+// ============================================================
+// Polka Webhook
+// ============================================================
+
+app.post(
+  "/api/polka/webhooks",
+  async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const apiKey =
+        getAPIKey(req);
+
+      if (
+        apiKey !==
+        config.api.polkaKey
+      ) {
+        res.status(401).json({
+          error:
+            "Unauthorized",
+        });
+
+        return;
+      }
+
+      const {
+        event,
+        data,
+      } = req.body;
+
+      // Ignore events we don't care about
+      if (
+        event !==
+        "user.upgraded"
+      ) {
+        res.status(204).send();
+
+        return;
+      }
+
+      if (
+        !data ||
+        typeof data.userId !==
+          "string"
+      ) {
+        res.status(400).json({
+          error:
+            "Invalid request body",
+        });
+
+        return;
+      }
+
+      const user =
+        await upgradeUserToChirpyRed(
+          data.userId,
+        );
+
+      if (!user) {
+        res.status(404).json({
+          error:
+            "User not found",
+        });
+
+        return;
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// ============================================================
 // Error Handler
-// ============================================
+// ============================================================
 
 function errorHandler(
   err: Error,
@@ -699,15 +867,16 @@ function errorHandler(
   console.log(err);
 
   res.status(500).json({
-    error: "Something went wrong on our end",
+    error:
+      "Something went wrong on our end",
   });
 }
 
 app.use(errorHandler);
 
-// ============================================
+// ============================================================
 // Start Server
-// ============================================
+// ============================================================
 
 app.listen(
   PORT,

@@ -1,47 +1,20 @@
 import "dotenv/config";
 
-export type APIConfig = {
-  fileserverHits: number;
-  platform: string;
-  jwtSecret: string;
+const apiConfig = {
+  fileserverHits: 0,
+  platform: process.env.PLATFORM || "dev",
+  jwtSecret: process.env.JWT_SECRET || "",
+  polkaKey: process.env.POLKA_KEY || "",
 };
 
-export type DBConfig = {
-  url: string;
+const dbConfig = {
+  url: process.env.DB_URL || "",
   migrationConfig: {
-    migrationsFolder: string;
-  };
+    migrationsFolder: "./src/db/migrations",
+  },
 };
 
-export type Config = {
-  api: APIConfig;
-  db: DBConfig;
-};
-
-function envOrThrow(key: string): string {
-  const value = process.env[key];
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-
-  return value;
-}
-
-export const config: Config = {
-  api: {
-    fileserverHits: 0,
-
-    platform: envOrThrow("PLATFORM"),
-
-    jwtSecret: envOrThrow("JWT_SECRET"),
-  },
-
-  db: {
-    url: envOrThrow("DB_URL"),
-
-    migrationConfig: {
-      migrationsFolder: "./src/db/migrations",
-    },
-  },
+export const config = {
+  api: apiConfig,
+  db: dbConfig,
 };
