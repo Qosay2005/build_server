@@ -1,0 +1,14 @@
+CREATE TABLE "refresh_tokens" (
+	"token" text PRIMARY KEY NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"revoked_at" timestamp
+);
+--> statement-breakpoint
+ALTER TABLE "users" DROP CONSTRAINT "users_email_unique";--> statement-breakpoint
+ALTER TABLE "chirps" ALTER COLUMN "body" SET DATA TYPE varchar(255);--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "email" SET DATA TYPE varchar(255);--> statement-breakpoint
+ALTER TABLE "users" ALTER COLUMN "hashed_password" SET DATA TYPE varchar(255);--> statement-breakpoint
+ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
